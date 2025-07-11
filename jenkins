@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = 'gimi89/docker-hub:latest'
+        DOCKERHUB_CREDENTIALS_ID = 'dockerhub-credentials' // Ruhet në Jenkins
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git 'https://github.com/jimmysaqipi/praktika-tectigon.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'pip install -r requirements.txt'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${DOCKER_IMAGE}")
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${DOCKER_IMAGE}
+                    """
+                }
+            }
+        }
+
+        stage('Terraform Init & Apply') {
+            steps {
+                dir('.') {
+                    sh '''
+                        terraform init
+                        terraform apply -auto-approve
+                    '''
+                }
+            }
+        }
+
+        stage('Run Python Script') {
+            steps {
+                sh 'python python.py'
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo "Build failed!"
+        }
+        success {
+            echo "Pipeline executed successfully!"
+        }
+    }
+}
