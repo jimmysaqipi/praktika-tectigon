@@ -1,0 +1,7 @@
+version: '3'
+services:
+  flask-app:
+    build: .
+    container_name: pyflask
+    ports:
+      - "8500:8500"
