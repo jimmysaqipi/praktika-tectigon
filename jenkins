@@ -2,66 +2,66 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = 'gimi89/docker-hub:latest'
-        DOCKERHUB_CREDENTIALS_ID = 'dockerhub-credentials' 
+        TF_WORKING_DIR = "${WORKSPACE}"
+        DOCKER_IMAGE_NAME = "gimi89/praktika-tectigon:latest"
+        DOCKERFILE_PATH = "." 
     }
 
     stages {
-        stage('Checkout Code') {
+        stage('Clone repository') {
             steps {
-                git 'https://github.com/jimmysaqipi/praktika-tectigon.git'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                sh 'pip install -r requirements.txt'
+                git 'https://github.com/jimmysaqipi/praktika-tectigon.git' // zëvendëso me URL-n e saktë
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    docker.build("${DOCKER_IMAGE}")
+                    // Kontrollo për Dockerfile
+                    def dockerfileExists = fileExists("${env.DOCKERFILE_PATH}/Dockerfile")
+                    if (!dockerfileExists) {
+                        error "Dockerfile nuk u gjet në rrugën ${env.DOCKERFILE_PATH}"
+                    }
+                    
+                    // Ndërto imazhin Docker
+                    docker.build("${env.DOCKER_IMAGE_NAME}")
                 }
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Run Docker Container') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS_ID}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh """
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push ${DOCKER_IMAGE}
-                    """
+                script {
+                    // Vëre nëse kontajneri ekziston dhe ndalo nëse po
+                    sh "docker stop ${env.DOCKER_IMAGE_NAME} || true"
+                    sh "docker rm ${env.DOCKER_IMAGE_NAME} || true"
+                    
+                    // Drejto kontajnerin
+                    docker.image("${env.DOCKER_IMAGE_NAME}").run(
+                        "--name ${env.DOCKER_IMAGE_NAME} -p 8500:8500"
+                    )
                 }
             }
         }
 
-        stage('Terraform Init & Apply') {
+        // Etapat e tjera të Terraform-it...
+        stage('Terraform Init') {
             steps {
-                dir('.') {
-                    sh '''
-                        terraform init
-                        terraform apply -auto-approve
-                    '''
+                dir("${TF_WORKING_DIR}") {
+                    sh 'terraform init'
                 }
             }
         }
 
-        stage('Run Python Script') {
-            steps {
-                sh 'python python.py'
-            }
-        }
+        // ... etapat e tjera të jenkinsfile origjinal
     }
 
     post {
-        failure {
-            echo "Build failed!"
-        }
-        success {
-            echo "Pipeline executed successfully!"
+        always {
+            echo "Pipeline finished"
+            // Pastro kontajnerin pas përfundimit
+            sh "docker stop ${env.DOCKER_IMAGE_NAME} || true"
+            sh "docker rm ${env.DOCKER_IMAGE_NAME} || true"
         }
     }
 }
